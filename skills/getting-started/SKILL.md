@@ -57,12 +57,14 @@ For APIs and tools, the same principle applies: build the connections, exports, 
 
 ### 0. Pick your surface: CLI or MCP
 
-Skills in this pack show `celigo ...` CLI commands, but there are two equivalent ways to execute most operations:
+There are two ways to run the operations these skills describe:
 
-- **The Celigo CLI** -- what the command blocks in these skills show.
-- **The Celigo Platform MCP server** -- if your agent is connected to it, the same operations are MCP tools. Translate CLI blocks directly: `list_<type>` / `upsert_<type>` replace `celigo <type> list|get|create|update`, `delete_resource` replaces `celigo <type> delete`, and `run_flow`, `cancel_job`, `list_jobs`, `list_flow_errors`, `list_execution_logs`, `deploy_template`, and `get_schema` cover running, monitoring, deploying, and schema lookups. The MCP server also has tools with no CLI equivalent, such as `search_knowledge_base` and `triage_flow_errors`.
+- **The Celigo CLI** (`celigo ...`).
+- **The Celigo Platform MCP server** -- if your agent is connected to it, the operations are MCP tools: `list_<type>` lists a resource family or, with an `_id`, reads one document; `upsert_<type>` creates (no `_id`) or replaces a whole document (with `_id`); `patch_flow` changes whitelisted flow fields in place; and `delete_resource` deletes. `run_flow`, `cancel_flow_run`, `list_flow_runs`, `list_current_jobs`, `list_flow_errors`, `triage_flow_errors`, `list_execution_logs`, `install_template`, and `get_schema` cover running, monitoring, error handling, deploying, and schema lookups; `list_users` / `manage_user` cover users, and `search_docs` covers `celigo docs search`.
 
-A few operations are CLI-only (no MCP tool): the local account index (`celigo account snapshot|search|dependencies|lint`), stacks, on-premise agents, and user management. For those, use the CLI, the integrator.io REST API, or the UI. API tokens are managed only in the UI -- there is no CLI command or MCP tool, and the REST endpoints refuse bearer-token callers (see [managing-api-tokens](../managing-api-tokens/SKILL.md#where-tokens-are-managed)).
+A skill with a `references/mcp.md` and `references/cli.md` describes each step by what it reads or changes and keeps the exact calls in those two files -- read the one that matches your tools. Skills without them still show `celigo` commands; on MCP, map each command onto the tools above: `list_<type>` / `upsert_<type>` replace `celigo <type> list|get|create|update`, `delete_resource` replaces `celigo <type> delete`, and `triage_flow_errors` covers `celigo flows retry-errors|resolve-errors|assign-errors|tag-errors`. Change a single flow field with `patch_flow` rather than a read and a full `upsert_flow`; no other resource has a patch tool.
+
+A few operations are CLI-only (no MCP tool): the local account index (`celigo account snapshot|search|dependencies|lint`), stacks, on-premise agents, and the recycle bin (`celigo recycle-bin restore|purge`; the MCP server restores only Celigo Storage files and folders). For those, use the CLI, the integrator.io REST API, or the UI. API tokens are managed only in the UI -- there is no CLI command or MCP tool, and the REST endpoints refuse bearer-token callers (see [managing-api-tokens](../managing-api-tokens/SKILL.md#where-tokens-are-managed)).
 
 ### 1. Configure the CLI
 
