@@ -139,8 +139,9 @@ Before creating anything, decide what kind of operation this is:
 
 **Decision tree:**
 
-- **Modifying an existing flow's step config** (export settings, import mappings, scripts) -- work on the step directly, not the flow: change the export or import itself, or follow the relevant skill (configuring-exports, configuring-imports, writing-scripts, writing-mappings)
+- **Modifying an existing flow's step config** (export settings, import mappings, scripts) -- work on the step directly, not the flow: change the export or import itself, or follow the relevant skill (configuring-exports, configuring-imports, writing-scripts, writing-mappings). An export or import can be a step in several flows, and an edit to it changes every one of them: first list what uses it, and if another flow depends on it, confirm with the user or copy the step for this flow
 - **Modifying an existing flow's structure** (add/remove steps, change schedule, rename) -- read the flow, modify the structure, and write the complete document back. Don't rebuild from scratch. Only a few single fields (the name, enable/disable, the schedule and timezone) can be changed on their own -- your reference lists them
+- **Modifying an Integration App's flow** (`_connectorId` set) -- edit only what the app leaves open, such as import mappings, lookups, input filters, and response mappings. Its steps, each step's connection, the endpoints and hooks the app ships, and some data-shaping settings are locked, and a full update that changes a locked field still answers 200 and keeps the app's value -- read the flow or step back after every change. For anything else, use the app's settings or build a companion flow outside the app ([using-marketplace-templates > Changing an Installed Integration App](../using-marketplace-templates/SKILL.md#changing-an-installed-integration-app))
 - **Building a new flow where every step is known** -- build directly, bottom-up (skip to step 2)
 - **Any ambiguity about what steps are needed** -- design first. List every system, every data direction, every step before writing any JSON
 
@@ -152,7 +153,7 @@ Before creating anything, decide what kind of operation this is:
 - What happens when a step fails? (`proceedOnFailure`, error notifications)
 - Do downstream steps need data from upstream responses? (response mapping)
 - Is this a one-off or a reusable template? (abstract/instance flow)
-- Sandbox or production? (never mix -- `sandbox: true` flows only use `sandbox: true` connections)
+- Production or a sandbox? Each environment has its own connections and flows, reached with its own token or profile, and nothing crosses between them. Never set the deprecated `sandbox` field to move or classify a flow ([getting-started > Sandbox vs Production](../getting-started/SKILL.md#sandbox-vs-production))
 
 ### 2. Identify the integration
 
@@ -211,7 +212,7 @@ Flow-level and per-step switches that change production behavior. APIs and tools
 
 | Control | Where | Default | Flip it when |
 |---|---|---|---|
-| `proceedOnFailure` | per processor | `false` (a failed record stops there) | The step is non-critical and downstream steps still do meaningful work without it (a Slack notification late in the flow shouldn't block the sync). Keep `false` when downstream depends on this step's output |
+| `proceedOnFailure` | per processor | `false` (a failed record stops there) | The step is non-critical and downstream steps still do meaningful work without it (a Slack notification late in the flow shouldn't block the sync). Keep `false` when downstream depends on this step's output. A lookup that finds nothing hasn't failed: the record continues with nothing merged whatever this is set to -- to stop it, make the lookup fail on no match ([configuring-exports > Lookup export vs separate scheduled export](../configuring-exports/SKILL.md#lookup-export-vs-separate-scheduled-export)) |
 | `skipRetries` | per page generator (the export has its own, shown as "Do not store retry data") | `false` (failed records keep their retry data and can be retried) | Work is time-sensitive (retrying a stale webhook is meaningless) -- set it on that generator only. It isn't a duplicate fix -- make the write idempotent instead ([configuring-imports > Writing Exactly Once](../configuring-imports/SKILL.md#writing-exactly-once)) |
 | `runPageGeneratorsInParallel` | flow | `false` (generators run sequentially) | Sources are independent and can take the load. Careful: parallel generators hitting the same API can blow rate limits that sequential runs respect |
 | `autoResolveMatchingTraceKeys` | flow | `true` on every new flow: a new error for a record auto-resolves that record's older open errors on the step, a later success resolves them all, and errors classified `intermittent` retry automatically (up to four attempts, the first about 30 minutes later) | Rarely. Off, every failure of a record stays open until someone resolves it, and intermittent errors get no automatic retry. Repeated trace keys are normal (delta re-emits, retries) and never raise an error -- a `duplicate` classification means the destination already holds the record, so turning this off doesn't fix it |
@@ -229,11 +230,11 @@ Always create with `disabled: true`. Verify the structure by reading the flow ba
 
 The flow may be enabled or disabled -- an enabled flow's test run answers 200 and runs (live-verified 2026-10-14). A test run is not a dry run of everything:
 
-- **Imports never send.** Each returns its saved `mockResponse`, or the placeholder `{"id": "1234567890", "mockResponse": "replace me"}` -- so response mappings after an import carry nothing real until you save a realistic mock ([configuring-imports > Testing an Import Without Writing](../configuring-imports/SKILL.md#testing-an-import-without-writing)).
+- **Imports never send.** Each returns its saved `mockResponse`, or the placeholder `{"id": "1234567890", "mockResponse": "replace me"}` -- so response mappings after an import carry nothing real until you save a realistic mock ([configuring-imports > Testing an Import Without Writing](../configuring-imports/SKILL.md#testing-an-import-without-writing)). An `id` response mapping still merges nothing in a test run: the response the test run builds from the mock carries no `id`, even when the mock has one, while real runs and the builder's preview carry it. Don't change a working `id` mapping because a test run left it empty.
 - **Exports and lookups read the live source**, unless the export has a saved `mockOutput`, which is replayed instead (the export's transform and filter still run on it).
 - **Hooks run**, and nothing sandboxes the `integrator-api` module in test mode: treat a hook's writes -- to a lookup cache or state, or an import or flow it runs -- as real.
 
-Enable only after the test run looks right.
+Enable only after the test run looks right. Enabling is also what switches a NetSuite or topic listener on: its deployment or subscription activates when the flow goes from disabled to enabled, not on a flow created already enabled. After repairing a listener export, or when a NetSuite listener stops firing, disable and re-enable the flow.
 
 ## Duplicate Records
 
@@ -262,7 +263,7 @@ The operations on a flow beyond building it. Each reference lists its calls unde
 - **Read and write** -- list flows, read one, create one, replace a whole flow, change individual fields, delete one
 - **Run** -- run on demand, optionally overriding the delta window (a start and end date) or running only some of the page generators
 - **Test run** -- run the flow in test mode, stage by stage, then read one step's per-stage results
-- **Clone** -- copy a flow into a target integration and environment, mapping each source connection to a target connection, optionally into a flow group
+- **Clone** -- copy a flow, with its exports, imports, and scripts, into a target integration and environment, optionally into a flow group. Connections aren't copied: the connection map must name every connection the flow's steps use, each mapped to itself to reuse it or to an existing connection in the target environment
 - **Change the structure** -- add a page generator (optionally with its own schedule, at a chosen position) or remove one; add or remove a page processor, at the top level or inside a router branch; replace one connection with another across every step
 - **Manage errors** -- list a step's open or resolved errors; resolve, retry, assign (to a user by email), or tag them; delete resolved errors; read one error with its retry data and its HTTP request and response; edit an error's retry data before a retry; count open errors per step; group a step's errors by pattern
 - **Debug** -- read a step's captured HTTP requests and one request's detail; arm and disarm execution logging; read a run's per-record execution logs, one record's stages, and one stage's data
@@ -287,7 +288,7 @@ Before creating or updating a flow, verify:
 1. **PUT erases omitted fields.** A full update replaces the whole document: always read it first, modify, then write the complete document back. Your reference says which single fields can be changed on their own and whether your surface does the read-modify-write for you.
 2. **`pageProcessors` and `routers` are mutually exclusive.** A flow uses one or the other at the top level. Setting both causes validation errors.
 3. **Router IDs must be unique within a flow.** Use random alphanumeric strings (e.g., `"N8Q9NX24Sj5"`). `nextRouterId` must reference an existing router `id` in the same flow.
-4. **Create flows with `disabled: true`.** An enabled flow with a schedule will run immediately. Enable only after verification.
+4. **Create flows with `disabled: true`.** An enabled flow with a schedule will run immediately, and a NetSuite or topic listener on a flow created already enabled stays inactive until the flow is disabled and re-enabled. Enable only after verification.
 5. **Build order matters.** Connection -> Export -> Import -> Flow. The API rejects references to non-existent resources.
 6. **Schedule is 6-field cron with seconds.** Format: `"? minute hour dayOfMonth month dayOfWeek"`. The first field is always `?`. Common mistake: using 5-field cron without the seconds position.
 7. **Instance flows cannot define structure.** Do not set `pageGenerators`, `pageProcessors`, or `routers` on instance flows -- these are inherited from the abstract flow. All customizations go through `overrides`.
@@ -311,5 +312,7 @@ Before creating or updating a flow, verify:
 | `Invalid nextRouterId` | A branch references a router `id` that does not exist in the flow | Ensure `nextRouterId` matches an actual router `id` in the same flow |
 | `Invalid cron expression` | Schedule uses 5-field cron or wrong format | Use 6-field format: `"? */5 * * * *"` (seconds field first, always `?`) |
 | Flow runs immediately after creation | Created with `disabled: false` or `disabled` omitted (defaults to enabled) | Always set `disabled: true` on create; enable after verification |
+| `400 invalid_connectionMap` on a clone | The flow's steps use connections, and the map is missing or empty | Map every connection the flow's steps use -- to itself to reuse it, or to an existing connection in the target environment |
+| An edit to an Integration App flow "succeeds" but nothing changed | The app locks that field: the full update answered 200 and kept the app's value | Change it through the app's settings, or build a companion flow outside the app |
 | `409 job_already_queued` on a run | The flow is already queued or running -- one instance at a time | Wait for the in-progress run to finish, then run again. A run-next trigger that arrived meanwhile was dropped, not queued |
 | Destination records created twice | A repeat reached a write that isn't idempotent | Read the runs in the window first ([Duplicate Records](#duplicate-records)), then key and lock the write ([configuring-imports > Writing Exactly Once](../configuring-imports/SKILL.md#writing-exactly-once)) |

@@ -7,14 +7,24 @@ The commands for each step of How to Build a Flow, then for each Flow Operation.
 - `celigo <type> set <id> key=value [key2=value2 ...]` changes the named fields and keeps the rest. When every field is on the type's PATCH whitelist it sends one JSON Patch; otherwise it does the GET, edits the fields, and PUTs the complete document back for you. The flows whitelist is `name`, `description`, `aiDescription`, `disabled`, `runPageGeneratorsInParallel`, `logging.debugUntil`, `logging.mode`, `schedule`, and `timezone` from CLI 2026.10.1; 2026.9.x and earlier list five schedule sub-paths in place of the last two (see step 8). Exports whitelist `debugUntil` and `assistantMetadata`, imports `debugUntil` -- every other field goes through GET + PUT.
 - Dot and index paths reach nested fields (`pageGenerators[0].schedule`, `routers[0].branches[1].pageProcessors[0]._importId`). Values parse as JSON with a string fallback, so `disabled=false` is a boolean and `'_runNextFlowIds=["<flowId>"]'` an array. `key=null` removes a field; `content=file://./hook.js` reads a value from a file.
 - `celigo <type> update <id> < doc.json` PUTs exactly the document you pipe in, so omitted fields are erased -- GET it first. It refuses a body that still carries masked `******` credentials copied from a GET unless you pass `--force`; for the same reason `set` on connections and iClients refuses any field that isn't whitelisted.
+- On an Integration App's document (`_connectorId` set), the platform answers 200 to a PUT but keeps its own value for every field the app locks. `set` and `update` name those fields on stderr ("the Integration App locks it") and exit 1.
 
 ## 1. Plan the flow
 
-Step config -- work on the export or import itself:
+Step config -- check what else uses the step, then work on the export or import itself:
 
 ```bash
+celigo exports dependencies <exportId>       # every flow listed changes with this export
+celigo imports dependencies <importId>
 celigo exports set <exportId> key=value [key2=value2 ...]
 celigo imports set <importId> key=value [key2=value2 ...]
+```
+
+`dependencies` (alias `used-by`) answers `{}` when nothing depends on the step -- and also for an id that doesn't exist, so check the id. To give this flow its own copy instead, clone the step (the reply's `_id` is the copy) and point the flow's step at it:
+
+```bash
+celigo imports clone <importId> --name "<name>"                    # same environment: no stdin needed
+celigo flows set <flowId> 'pageProcessors[1]._importId=<copyId>'   # the step's position in the flow
 ```
 
 Structure -- `celigo flows set` for fields, the helpers under Change the structure for steps, or the full round trip:
@@ -111,6 +121,8 @@ celigo flows test-run-step-results <flowId> <runId> <exportOrImportId>  # per-st
 celigo flows set <flowId> disabled=false                                 # enable: one PATCH
 ```
 
+To re-register a NetSuite or topic listener after a repair, toggle the flow: `celigo flows set <flowId> disabled=true`, then `disabled=false`.
+
 ## Duplicate Records
 
 ```bash
@@ -154,10 +166,10 @@ For flows, `--export` (one page generator) is required. The flow may be enabled 
 ### Clone
 
 ```bash
-echo '{"connectionMap":{"<oldConnectionId>":"<newConnectionId>"}}' | celigo flows clone <flowId> <integrationId> <environmentId> [--flow-group <flowGroupingId>]
+echo '{"connectionMap":{"<oldConnectionId>":"<newConnectionId>","<keptConnectionId>":"<keptConnectionId>"}}' | celigo flows clone <flowId> <integrationId> <environmentId> [--flow-group <flowGroupingId>]
 ```
 
-A same-environment clone needs no stdin: the CLI maps each connection to itself. `--name` names the clone (default `Clone - <source name>`).
+With nothing piped, the CLI maps each connection the flow's steps use to itself, which suits a same-environment clone. A piped map replaces that self-map, so it must still list every connection the steps use: the ones you remap, and the rest mapped to themselves. `--name` names the clone (default `Clone - <source name>`).
 
 ### Change the structure
 

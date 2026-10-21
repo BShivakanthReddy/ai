@@ -19,6 +19,7 @@ The tool calls for each step of How to Build a Flow, then for each Flow Operatio
 - **Anything else** is a read with `list_<type>` and the `_id`, then `upsert_<type>` with the `_id` and the COMPLETE document, without the server-managed `_id`, `lastModified`, and `createdAt`. PUT replaces the whole document and erases omitted fields; no tool does this round trip for you.
 - **Never send masked credentials back.** `list_connections` with an `_id` returns the stored secrets as `******`, and `upsert_connection` rejects a body carrying the mask unless you pass `force: true` -- never pass it. Omitting the secrets is no fix either, whatever the error message suggests: a full update without the real secret clears it. No tool patches a connection, so hand connection changes to the user in the Celigo UI -- see **configuring-connections** (Credential Discipline).
 - **Logging is PATCH-only.** POST and PUT ignore a flow's `logging`, so arm and disarm it with `patch_flow` (Debug).
+- **Integration App documents** (`_connectorId` set) keep the app's value for every field it locks, though `upsert_<type>` succeeds and nothing flags the kept field -- read the document back with `list_<type>` and the `_id`, and compare.
 
 ## Patchable Flow Fields
 
@@ -41,6 +42,14 @@ Everything else -- steps, routers, a page generator's own schedule, `proceedOnFa
 list_exports({ _id: "<exportId>" })
 upsert_export({ _id: "<exportId>", body: <the complete export, edited> })
 ```
+
+Nothing over MCP lists what uses a step. Before the edit, read every flow with its steps and look for the step's `_id` in `pageGenerators[]._exportId`, `pageProcessors[]`, and each branch's `pageProcessors[]`; APIs and Tools hold steps the same way (`list_apis`, `list_tools`):
+
+```
+list_flows({ include: "pageGenerators,pageProcessors,routers" })
+```
+
+To give this flow its own copy, create one with `upsert_export` or `upsert_import` and no `_id`, from the step's document without its server-managed fields, then point this flow's step at the new `_id` (`list_flows` + `upsert_flow`).
 
 **Structure** -- a rename or an enable/disable is one `patch_flow`; adding or removing steps is `list_flows` + `upsert_flow` with the complete flow (Change the structure).
 
@@ -134,6 +143,8 @@ patch_flow({ _id: "<flowId>", body: [{ op: "replace", path: "/disabled", value: 
 ```
 
 No MCP tool test-runs a flow (Test run, below): before you enable it, have the user test-run it in the Celigo UI, or test-run it with the CLI.
+
+To re-register a NetSuite or topic listener after a repair, toggle the flow: `patch_flow` `/disabled` to `true`, then to `false`.
 
 ## Duplicate Records
 
