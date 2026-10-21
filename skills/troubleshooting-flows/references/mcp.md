@@ -16,7 +16,7 @@ list_flow_runs({ _id: "<jobId>" })                                  // the run f
 list_current_jobs({ body: { _flowIds: ["<flowId>"] } })             // queued / running right now
 ```
 
-The run family's `children[]` carries each step's own status and counts -- the quickest way to see whether the export or an import failed.
+The run family's `children[]` carries each step's own status and counts -- the quickest way to see whether the export or an import failed, and the counts to read for one step, since the parent's add up every step.
 
 ## 2. Get the per-step error counts
 
@@ -49,13 +49,22 @@ get_flow_error_retry_data({ _id: "<flowId>", _stepId: "<stepId>", retryDataKey: 
 
 returns that error's stored retry-data snapshot: the record (`data`), the `stage` it failed in, and the captured request/response fields. When the failing run captured execution logs, the error's `traceKey` finds its per-record entry: `list_execution_logs({ _id: "<flowId>", _jobId: "<jobId>", traceKey: "<traceKey>" })`.
 
+**Integration App steps** (the export or import carries `_connectorId`; SKILL.md, Which Step Failed?):
+
+```
+list_audit_log_entries({ resourceType: "import", _resourceId: "<importId>" })   // the step's changes: source "connector" is the app, "system" the platform
+list_integrations({ _id: "<integrationId>" })                                   // the app's settings as stored
+```
+
+No MCP tool saves an Integration App's settings -- the user saves them on the app's settings page (using-marketplace-templates).
+
 ## 5. Test run
 
 No MCP tool test-runs a flow (see Not Available over MCP). Have the user test-run it in the Celigo UI, or use the CLI. When only a real run can show a record's input and output, use execution logs (step 6) -- a real run writes, so that is the user's call.
 
 ## 6. Execution logs
 
-Arm logging, run, read, then disarm. The flow's debug window can be set up to 72 hours ahead on standard licenses.
+Arm logging, run, read, then disarm. The longest debug window is the plan's `maxDebugDuration` (minutes, on the account's license, which no MCP tool reads); a later `debugUntil` is rejected with 422, so don't assume 72 hours.
 
 ```
 patch_flow({ _id: "<flowId>", body: [{ op: "replace", path: "/logging/debugUntil", value: "<ISO-8601 time>" }] })
@@ -138,6 +147,17 @@ list_flow_runs({ _id: "<flowJobId>" })     // repeat until status is canceled
 run_flow({ _id: "<flowId>" })
 ```
 
+## Missed Scheduled Runs
+
+```
+list_flows({ _id: "<flowId>" })                                   // disabled, schedule, timezone, and each pageGenerators[].schedule
+list_current_jobs({ body: { _flowIds: ["<flowId>"] } })           // a run still queued or running
+list_flow_runs({ type: "flow", _flowId: "<flowId>", limit: 5 })   // recent runs; triggeredBy "system" marks a scheduled one
+run_flow({ _id: "<flowId>" })                                     // catch up -- writes, so only once the user agrees
+```
+
+Don't `patch_flow` the schedule to fix a miss.
+
 ## Reprocess a Window
 
 ```
@@ -157,6 +177,7 @@ Clearing `mockOutput` is a full update -- `list_exports` with the `_id`, then `u
 ## Not Available over MCP
 
 - **Test runs** (step 5) and **a test run's per-stage results** -- the UI, or the CLI's `flows test-run` and `flows test-run-step-results`.
+- **Invoking or previewing an export on its own** -- the UI, or the CLI's `exports invoke`.
 - **Connection ping.** Read the connection's `offline` flag and the 401/403 responses in its steps' errors instead; ping with the CLI or the UI.
 - **Changing a connection**, its concurrency included -- the user makes the change in the UI, or use the CLI's `connections set` for a whitelisted field.
 - **Per-resource debug windows** (step 7) -- arming them and reading what they capture.
